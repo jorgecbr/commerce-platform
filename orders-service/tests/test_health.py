@@ -37,4 +37,7 @@ def test_unhandled_error_is_not_leaked_to_the_client() -> None:
     assert response.status_code == 500
     # The internal message must not reach the client; it goes to the log.
     assert "secret" not in response.text
-    assert response.json() == {"detail": "internal server error"}
+    assert response.json() == {
+        "error": "InternalServerError",
+        "detail": "internal server error",
+    }

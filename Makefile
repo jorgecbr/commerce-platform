@@ -15,7 +15,7 @@ PY := uv run --directory $(SERVICE)
 # -------------------------------------------------------------------------
 # Quality gate
 # -------------------------------------------------------------------------
-.PHONY: check lint format typecheck deps test coverage
+.PHONY: check lint format typecheck deps test test-unit test-integration coverage
 
 check: lint typecheck deps test ## Run every quality gate (same as CI)
 
@@ -33,8 +33,14 @@ typecheck: ## mypy in strict mode
 deps: ## find declared-but-unused dependencies
 	$(PY) deptry .
 
-test: ## unit + smoke tests (no Docker required)
+test: ## whole suite; integration tests skip themselves if infra is missing
 	$(PY) pytest
+
+test-unit: ## domain and application only, never touches the network
+	$(PY) pytest tests/domain tests/application tests/test_health.py
+
+test-integration: ## needs PostgreSQL and Redis running
+	$(PY) pytest tests/integration
 
 coverage: ## tests with a coverage report
 	$(PY) pytest --cov=app --cov-report=term-missing
@@ -42,13 +48,36 @@ coverage: ## tests with a coverage report
 # -------------------------------------------------------------------------
 # App
 # -------------------------------------------------------------------------
-.PHONY: run install sync
+.PHONY: run sync
 
 sync: ## install dependencies
 	uv sync --project $(SERVICE) --all-groups
 
 run: ## start the API with reload
 	cd $(SERVICE) && uv run uvicorn app.main:app --reload --port 8000
+
+# -------------------------------------------------------------------------
+# Infrastructure
+# -------------------------------------------------------------------------
+.PHONY: up down migrate revision reset-db
+
+up: ## start PostgreSQL, Redis and Kafka
+	docker compose up -d postgres redis kafka
+	docker compose ps
+
+down: ## stop everything and drop the volumes
+	docker compose down -v
+
+migrate: ## apply migrations
+	cd $(SERVICE) && uv run alembic upgrade head
+
+revision: ## autogenerate a migration: make revision msg="add index"
+	cd $(SERVICE) && uv run alembic revision --autogenerate -m "$(msg)"
+
+reset-db: ## recreate the database and reapply every migration
+	docker compose down -v
+	$(MAKE) up
+	$(MAKE) migrate
 
 # -------------------------------------------------------------------------
 # Housekeeping
@@ -58,8 +87,8 @@ run: ## start the API with reload
 clean: ## remove caches and build artefacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	rm -rf $(SERVICE)/.pytest_cache $(SERVICE)/.ruff_cache $(SERVICE)/.mypy_cache
-	rm -rf $(SERVICE)/htmlcov $(SERVICE)/.coverage
+	rm -rf $(SERVICE)/htmlcov $(SERVICE)/.coverage $(SERVICE)/coverage.xml
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'

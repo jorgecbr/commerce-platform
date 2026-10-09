@@ -12,6 +12,10 @@ dependencies = [
   "uvicorn[standard]==0.34.0",
   "pydantic==2.10.4",
   "pydantic-settings==2.7.0",
+  "sqlalchemy[asyncio]==2.0.36",
+  "psycopg[binary]==3.2.3",
+  "alembic==1.14.0",
+  "redis==5.2.1",
 ]
 
 [dependency-groups]
@@ -40,6 +44,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = ["-q", "--strict-markers", "--strict-config"]
+markers = ["integration: needs PostgreSQL or Redis; skipped when unreachable"]
 # A warning from our code is a bug, so it fails the build. The single
 # exception is a known deprecation inside starlette's test client, which we
 # cannot fix and must not hide behind a blanket "ignore warnings" policy.
@@ -106,6 +111,9 @@ ignore = [
 # In tests the name of the test is the documentation, and asserting on the
 # literal 4500 is clearer than hiding it behind a constant.
 "tests/**" = ["D", "ANN", "ARG", "S101", "PLR2004"]
+# Alembic generates the module docstring and the upgrade/downgrade functions,
+# so the docstring rules add noise without adding information.
+"migrations/**" = ["D"]
 
 # --------------------------------------------------------------------------
 # deptry: finds dependencies that are declared but unused
