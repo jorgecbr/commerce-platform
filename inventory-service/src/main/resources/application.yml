@@ -1,0 +1,70 @@
+spring:
+  application:
+    name: inventory-service
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/inventory}
+    username: ${DATABASE_USER:inventory}
+    password: ${DATABASE_PASSWORD:inventory}
+    hikari:
+      # A pool larger than PostgreSQL can serve is a queue in disguise.
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Hibernate validating it on boot is how a
+      # missing migration gets noticed instead of at the first query.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:inventory-service}
+      # Read history rather than skipping whatever was published before this
+      # consumer group existed.
+      auto-offset-reset: earliest
+      # Offsets are committed only after the handler returns, which is what
+      # gives at-least-once delivery. The listener is idempotent.
+      enable-auto-commit: false
+      properties:
+        isolation.level: read_committed
+    producer:
+      # acks=all plus idempotence: a broker failover cannot lose an event.
+      acks: all
+      properties:
+        enable.idempotence: true
+    listener:
+      ack-mode: record
+
+app:
+  kafka:
+    consumer-group: ${KAFKA_CONSUMER_GROUP:inventory-service}
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"

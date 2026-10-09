@@ -8,6 +8,7 @@ SHELL := bash
 MAKEFLAGS += --no-print-directory
 
 SERVICE := orders-service
+JAVA_SERVICE := inventory-service
 # `--directory` runs the command from inside the service folder, because mypy's
 # `files` setting and the coverage paths are relative to it.
 PY := uv run --directory $(SERVICE)
@@ -17,7 +18,7 @@ PY := uv run --directory $(SERVICE)
 # -------------------------------------------------------------------------
 .PHONY: check lint format typecheck deps test test-unit test-integration coverage
 
-check: lint typecheck deps test ## Run every quality gate (same as CI)
+check: lint typecheck deps test test-java ## Run every quality gate (same as CI)
 
 lint: ## ruff lint + format check
 	$(PY) ruff check .
@@ -53,8 +54,17 @@ coverage: ## tests with a coverage report
 sync: ## install dependencies
 	uv sync --project $(SERVICE) --all-groups
 
-run: ## start the API with reload
+run: ## start orders-service with reload on :8000
 	cd $(SERVICE) && uv run uvicorn app.main:app --reload --port 8000
+
+run-java: ## start inventory-service on :8080
+	cd $(JAVA_SERVICE) && mvn -q spring-boot:run
+
+build-java: ## build the jar without running the app
+	cd $(JAVA_SERVICE) && mvn -q package -DskipTests
+
+test-java: ## unit tests for inventory-service
+	cd $(JAVA_SERVICE) && mvn -B test
 
 # -------------------------------------------------------------------------
 # Infrastructure

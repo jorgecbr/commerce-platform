@@ -10,15 +10,15 @@ coverage.xml
 htmlcov/
 *.egg-info/
 
-# Env
-.env
-.env.*
-!.env.example
-
 # Java / Maven
 target/
 .mvn/
 *.class
+
+# Env
+.env
+.env.*
+!.env.example
 
 # Editors / OS
 .idea/
