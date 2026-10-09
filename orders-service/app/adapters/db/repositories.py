@@ -69,7 +69,8 @@ class SqlAlchemyOrderRepository:
             .values(
                 status=order.status.value,
                 currency=order.currency,
-                total_amount=order.total.amount,
+                total_amount=order.gross_total.amount,
+                discount_amount=order.discount.amount,
                 updated_at=order.updated_at.value,
                 version=order.version,
             )

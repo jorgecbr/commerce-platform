@@ -7,7 +7,9 @@ import pytest
 from app.domain import (
     DuplicateSkuError,
     EmptyOrderError,
+    InvalidDiscountError,
     InvalidOrderStateError,
+    Money,
     Order,
     OrderCancelled,
     OrderConfirmed,
@@ -23,12 +25,17 @@ ORDER_ID = UUID("11111111-1111-1111-1111-111111111111")
 CUSTOMER = "customer-42"
 
 
-def place(lines: tuple[OrderLine, ...] | None = None, customer: str = CUSTOMER) -> Order:
+def place(
+    lines: tuple[OrderLine, ...] | None = None,
+    customer: str = CUSTOMER,
+    discount: Money | None = None,
+) -> Order:
     return Order.place(
         order_id=ORDER_ID,
         customer_id=customer,
         lines=lines if lines is not None else build_lines(),
         now=FROZEN_NOW,
+        discount=discount,
     )
 
 
@@ -62,6 +69,25 @@ class TestTotals:
     def test_total_is_the_sum_of_line_totals(self) -> None:
         # 2 x 10.00 + 1 x 25.50 = 45.50
         assert place().total.amount == 4550
+
+    def test_gross_and_net_are_both_exposed(self) -> None:
+        order = place(discount=Money(550, "USD"))
+        assert order.gross_total.amount == 4550
+        assert order.total.amount == 4000
+
+    def test_discount_is_frozen_at_placement(self) -> None:
+        """A later catalogue reprice must not change an existing order."""
+        order = place(discount=Money(550, "USD"))
+        order.confirm(now=LATER)
+        assert order.total.amount == 4000
+
+    def test_rejects_a_discount_larger_than_the_total(self) -> None:
+        with pytest.raises(InvalidDiscountError):
+            place(discount=Money(9999, "USD"))
+
+    def test_rejects_a_negative_discount(self) -> None:
+        with pytest.raises(InvalidDiscountError):
+            place(discount=Money(-1, "USD"))
 
     def test_currency_comes_from_the_lines(self) -> None:
         assert place().currency == "USD"

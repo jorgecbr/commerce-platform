@@ -8,6 +8,7 @@ alone guarantees the invariants:
   * the same SKU cannot appear twice (a customer cannot negotiate the price
     of a product line by line)
   * an order only moves through the states in ``ALLOWED_TRANSITIONS``
+  * a discount never exceeds the amount it discounts, and never goes negative
   * every state change bumps ``version`` (optimistic locking) and appends a
     domain event
 
@@ -22,7 +23,12 @@ tested in isolation, the boundary is wrong.
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from app.domain.errors import DuplicateSkuError, EmptyOrderError, TooManyLinesError
+from app.domain.errors import (
+    DuplicateSkuError,
+    EmptyOrderError,
+    InvalidDiscountError,
+    TooManyLinesError,
+)
 from app.domain.events import (
     OrderCancelled,
     OrderConfirmed,
@@ -50,6 +56,9 @@ class Order:
     lines: tuple[OrderLine, ...]
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    # Field default instead of a call: dataclass defaults are evaluated once
+    # at import time, and a mutable default would be shared across instances.
+    discount: Money = field(default_factory=lambda: Money.zero("USD"))
     version: int = 1
     events: tuple[OrderDomainEvent, ...] = field(default=(), repr=False)
 
@@ -63,11 +72,16 @@ class Order:
         customer_id: str,
         lines: tuple[OrderLine, ...],
         now: UtcDatetime,
+        discount: Money | None = None,
     ) -> "Order":
         """Create a new order, applying every invariant before returning.
 
         ``place`` instead of ``__init__`` so the only way to build a valid
         order is a factory that already validated it.
+
+        The discount is computed by ``PricingService`` and handed in, then
+        frozen here. Freezing it matters: the catalogue may be repriced later,
+        and what the customer agreed to pay must not change underneath them.
         """
         if not lines:
             raise EmptyOrderError("An order must contain at least one line")
@@ -80,6 +94,14 @@ class Order:
                 raise DuplicateSkuError(f"SKU {line.sku} appears more than once in the order")
             seen.add(line.sku)
 
+        currency = lines[0].unit_price.currency
+        raw_total = sum((line.line_total for line in lines), start=Money.zero(currency))
+        discount = Money.zero(currency) if discount is None else discount
+        if discount.is_negative:
+            raise InvalidDiscountError(f"Discount cannot be negative: {discount}")
+        if discount.amount > raw_total.amount:
+            raise InvalidDiscountError(f"Discount {discount} exceeds the order total {raw_total}")
+
         order = cls(
             id=order_id,
             customer_id=customer_id,
@@ -87,6 +109,7 @@ class Order:
             lines=lines,
             created_at=now,
             updated_at=now,
+            discount=discount,
             version=1,
         )
         total = order.total
@@ -103,9 +126,18 @@ class Order:
         return self.lines[0].unit_price.currency
 
     @property
-    def total(self) -> Money:
-        """Immutable since the lines are frozen: recomputing is cheap and safe."""
+    def gross_total(self) -> Money:
+        """Sum of the line totals, before any discount."""
         return sum((line.line_total for line in self.lines), start=Money.zero(self.currency))
+
+    @property
+    def total(self) -> Money:
+        """What the customer pays.
+
+        Derived rather than stored, so it can never disagree with the lines.
+        The lines and the discount are both frozen at placement time.
+        """
+        return self.gross_total - self.discount
 
     @property
     def is_modifiable(self) -> bool:

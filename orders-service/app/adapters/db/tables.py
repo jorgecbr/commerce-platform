@@ -41,6 +41,12 @@ class OrderRow(Base):
         # means somebody else changed the row first.
         CheckConstraint("version >= 1", name="ck_orders_version_positive"),
         CheckConstraint("total_amount >= 0", name="ck_orders_total_non_negative"),
+        # The database refuses a discount larger than the order, so even a
+        # write that bypasses the aggregate cannot create a negative total.
+        CheckConstraint(
+            "discount_amount >= 0 AND discount_amount <= total_amount",
+            name="ck_orders_discount_within_total",
+        ),
         Index("ix_orders_customer_created", "customer_id", "created_at"),
         Index("ix_orders_status_created", "status", "created_at"),
     )
@@ -50,6 +56,7 @@ class OrderRow(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     total_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    discount_amount: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

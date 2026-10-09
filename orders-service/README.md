@@ -22,7 +22,7 @@ domain imports nothing from the rest of the codebase.
 
 ```shell
 uv sync
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:create_app_from_env --factory --reload
 ```
 
 ## Test it

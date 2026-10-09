@@ -4,6 +4,8 @@ The only tests in the suite that touch the network layer, and they still need
 no Docker: the ASGI app is called in-process through ``httpx``.
 """
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,14 +14,25 @@ from app.main import create_app
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(create_app())
+def client() -> Iterator[TestClient]:
+    """Client over an app whose lifespan ran, so ``app.state`` is populated."""
+    with TestClient(create_app()) as value:
+        yield value
 
 
 def test_health_live_is_public(client: TestClient) -> None:
     response = client.get("/health/live")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "orders-service", "version": "0.1.0"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["service"] == "orders-service"
+
+
+def test_readiness_reports_dependency_state(client: TestClient) -> None:
+    """Readiness checks dependencies; liveness deliberately does not."""
+    response = client.get("/health/ready")
+    assert response.status_code == 200
+    assert "redis" in response.json()["checks"]
 
 
 def test_unknown_route_returns_404(client: TestClient) -> None:

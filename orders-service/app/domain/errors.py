@@ -57,5 +57,9 @@ class InvalidOrderStateError(DomainError):
     """The requested transition is not allowed from the current state."""
 
 
+class InvalidDiscountError(DomainError):
+    """A discount that is negative or larger than the amount it discounts."""
+
+
 class OrderNotFoundError(DomainError):
     """No order exists for the given identifier."""

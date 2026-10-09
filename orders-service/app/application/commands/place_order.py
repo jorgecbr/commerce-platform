@@ -90,6 +90,9 @@ class PlaceOrder:
             customer_id=request.customer_id,
             lines=lines,
             now=now,
+            # The discount is computed here and frozen by the aggregate, so
+            # the stored total and the reported total can never disagree.
+            discount=self._pricing.order_discount(lines),
         )
 
         # 3. Persist state + events in one transaction.
@@ -97,7 +100,4 @@ class PlaceOrder:
         await self._publisher.publish(order.pull_events())
         await self._transactions.commit()
 
-        # 4. Business pricing for reporting, on top of the raw order total.
-        priced = self._pricing.order_total(lines)
-
-        return PlaceOrderResult(order_id=order.id, total=priced, created_at=now)
+        return PlaceOrderResult(order_id=order.id, total=order.total, created_at=now)

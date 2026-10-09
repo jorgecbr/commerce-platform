@@ -72,9 +72,16 @@ class TestPlaceOrder:
     async def test_applies_volume_pricing_to_the_result(
         self,
         place_order: PlaceOrder,
+        orders: InMemoryOrderRepository,
     ) -> None:
         result = await place_order.execute(request_with(("SKU-001", 10, "10.00")))
         assert result.total.amount == 9500  # 100.00 - 5%
+        # The reported total and the stored total are the same value: the
+        # discount is frozen on the aggregate, so they cannot drift apart.
+        stored = orders.orders[result.order_id]
+        assert stored.total.amount == result.total.amount
+        assert stored.gross_total.amount == 10000
+        assert stored.discount.amount == 500
 
     @pytest.mark.asyncio
     async def test_publishes_events_before_committing(

@@ -124,3 +124,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(orders.router)
     return app
+
+
+def create_app_from_env() -> FastAPI:
+    """ASGI entry point used by uvicorn: ``--factory``.
+
+    A factory instead of a module-level instance so importing this module does
+    not configure logging or read settings, which keeps the test suite fast
+    and side-effect free.
+    """
+    return create_app()

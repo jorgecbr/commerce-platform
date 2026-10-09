@@ -54,3 +54,17 @@ class PricingService:
         for line in lines:
             total = total + self.discounted_total(line)
         return total
+
+    def order_discount(self, lines: tuple[OrderLine, ...]) -> Money:
+        """Return how much a whole basket is discounted.
+
+        Returned as a discount rather than a total so the caller hands it to
+        the aggregate, which freezes it alongside the lines. That is what keeps
+        a later catalogue reprice from changing an order that already exists.
+        """
+        if not lines:
+            raise EmptyOrderError("Cannot price an empty basket")
+        gross = Money.zero(lines[0].unit_price.currency)
+        for line in lines:
+            gross = gross + line.line_total
+        return gross - self.order_total(lines)

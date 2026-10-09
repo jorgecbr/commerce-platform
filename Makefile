@@ -55,7 +55,7 @@ sync: ## install dependencies
 	uv sync --project $(SERVICE) --all-groups
 
 run: ## start orders-service with reload on :8000
-	cd $(SERVICE) && uv run uvicorn app.main:app --reload --port 8000
+	cd $(SERVICE) && uv run uvicorn app.main:create_app_from_env --factory --reload --port 8000
 
 run-java: ## start inventory-service on :8080
 	cd $(JAVA_SERVICE) && mvn -q spring-boot:run

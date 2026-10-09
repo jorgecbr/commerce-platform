@@ -42,7 +42,8 @@ def order_to_row(order: Order) -> OrderRow:
         customer_id=order.customer_id,
         status=order.status.value,
         currency=order.currency,
-        total_amount=order.total.amount,
+        total_amount=order.gross_total.amount,
+        discount_amount=order.discount.amount,
         created_at=order.created_at.value,
         updated_at=order.updated_at.value,
         version=order.version,
@@ -76,6 +77,7 @@ def row_to_order(row: OrderRow) -> Order:
         lines=lines,
         created_at=UtcDatetime(row.created_at),
         updated_at=UtcDatetime(row.updated_at),
+        discount=Money(row.discount_amount, row.currency),
         version=row.version,
     )
 
