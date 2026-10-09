@@ -5,6 +5,9 @@ checkout to shipment, coordinates stock reservation with the inventory
 service, and guarantees that state changes and published events stay
 consistent.
 
+Two services, two databases, one contract between them: the events published
+to Kafka.
+
 [![CI](https://github.com/jorgecbr/commerce-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/jorgecbr/commerce-platform/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -149,29 +152,24 @@ orders for the last unit from both succeeding.
 ## Development
 
 ```shell
-make up          # PostgreSQL, Redis, Kafka
+make up          # the whole stack: infra, both services, the worker
 make migrate     # apply migrations
 make run         # orders-service on :8000
 make run-java    # inventory-service on :8080
 make check       # lint, types, dependencies, tests
+make verify      # end-to-end check of the saga (needs the stack running)
 ```
 
-Seed stock and place an order:
+Place an order and watch the saga complete:
 
 ```shell
-curl -X PUT localhost:8080/stock/SKU-001 -H 'content-type: application/json' \
-     -d '{"available": 100}'
-
 curl -X POST localhost:8000/orders -H 'content-type: application/json' -d '{
   "customer_id": "customer-42",
   "lines": [{"sku": "SKU-001", "quantity": 2, "unit_price": "10.00", "currency": "USD"}]
 }'
-```
 
-Watch the saga complete:
-
-```shell
-docker compose logs -f inventory-service
+docker compose logs -f inventory-service   # "Reserved stock for order ..."
+docker compose logs -f orders-worker       # "Order ... moved to confirmed"
 ```
 
 ## Testing
@@ -180,6 +178,7 @@ docker compose logs -f inventory-service
 make test              # everything
 make test-unit         # no infrastructure required
 make test-integration  # needs PostgreSQL, Redis and Kafka
+make verify            # the saga, end to end, against the running stack
 cd inventory-service && mvn test
 ```
 
@@ -192,17 +191,89 @@ twice is handled once.
 
 | Suite | What it runs |
 |---|---|
-| `orders-service` | pytest, 130 tests |
+| `orders-service` | pytest, 136 tests |
 | `inventory-service` | JUnit 5, 15 tests |
 
 Integration tests skip themselves when the infrastructure is not reachable,
 so a developer without Docker still gets a green local run.
+
+## How this is proven
+
+Unit tests are necessary and not sufficient, and this repository is a concrete
+example of why.
+
+Every unit test in the project passed while the system did not work.
+`order.placed` was published without its lines, so the inventory service parsed
+a missing field as an empty list, reserved **zero units**, and answered
+`inventory.reserved` anyway. The saga then confirmed the order. The result was
+orders confirmed with no stock behind them, while the catalogue still showed
+every unit available.
+
+Nothing in a single-layer test can catch that. The domain was correct, the
+mapper serialised exactly what the event contained, the outbox stored it
+faithfully, and the Java tests used a stub payload that did include lines. The
+defect existed only in the gap between two services.
+
+So the suite ends with a check that crosses that gap:
+
+```shell
+make verify
+```
+
+```text
+0. Stack must be running
+  PASS postgres / redis / kafka / orders-service / orders-worker / inventory-service
+
+1. Happy path: order -> stock reserved -> order confirmed
+  stock before: 100
+  PASS order created and pending
+  PASS saga confirmed the order
+  PASS inventory service reserved 3 units (100 -> 97)
+  PASS outbox published both events
+  PASS saga consumer registered the message in its inbox
+
+2. Compensation: no stock -> order cancelled -> nothing reserved
+  PASS saga cancelled the order instead of confirming it
+  PASS no stock was wrongly reserved
+  PASS order.cancelled published for the compensating action
+```
+
+The second journey is the one that justifies the whole design. A system that
+can confirm an order but cannot undo it is worse than one that does neither,
+because it looks correct. `make verify` runs on every push.
+
+### Continuous integration
+
+Five jobs, ordered so a lint error costs seconds instead of minutes:
+
+| Job | Checks |
+|---|---|
+| `quality gates` | ruff, mypy `--strict`, deptry — blocks everything else |
+| `unit and integration tests` | 136 tests against real PostgreSQL, Kafka and Redis; coverage enforced at 85% |
+| `inventory-service (java)` | JUnit 5 against the Spring service |
+| `saga end-to-end` | builds both images, migrates, runs `verify_saga.sh` |
+| `repository hygiene` | no committed secrets, migrations present, every built service has a Dockerfile |
+
+When the saga job fails it dumps both the `orders` and the `stock_items`
+tables, because "the saga did not finish" is useless without knowing how far
+it got.
 
 ## Documentation
 
 - [`docs/architecture/c4-context.md`](docs/architecture/c4-context.md) — system context and ubiquitous language
 - [`orders-service/README.md`](orders-service/README.md) — Python internals
 - [`inventory-service/README.md`](inventory-service/README.md) — Java internals
+- [`scripts/verify_saga.sh`](scripts/verify_saga.sh) — the end-to-end check, readable top to bottom
+
+## Not included
+
+Deliberately out of scope, so that what is here can be explained properly:
+
+| | Why |
+|---|---|
+| gRPC | REST plus Kafka cover the two interaction styles the platform actually needs |
+| A CQRS read model | The write side is the interesting half; a denormalised read model would be one more table with little to say |
+| Kubernetes | Compose already runs the stack; manifests would add volume without adding understanding |
 
 ## License
 
