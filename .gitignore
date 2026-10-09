@@ -1,3 +1,7 @@
+# Build artefacts. The Dockerfile consumes a jar produced by `mvn package`,
+# so the working tree stays free of them.
+target/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -9,11 +13,6 @@ __pycache__/
 coverage.xml
 htmlcov/
 *.egg-info/
-
-# Java / Maven
-target/
-.mvn/
-*.class
 
 # Env
 .env
