@@ -10,13 +10,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.config import Settings
 from app.main import create_app
+
+# The engine and the Redis client are both lazy: nothing connects until a
+# request needs them, so these tests run without any infrastructure.
+TEST_SETTINGS = Settings(
+    DATABASE_DSN="postgresql://user:pass@localhost:5432/orders",
+    REDIS_URL="redis://localhost:6379/15",
+)
 
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """Client over an app whose lifespan ran, so ``app.state`` is populated."""
-    with TestClient(create_app()) as value:
+    with TestClient(create_app(TEST_SETTINGS)) as value:
         yield value
 
 
@@ -40,7 +48,7 @@ def test_unknown_route_returns_404(client: TestClient) -> None:
 
 
 def test_unhandled_error_is_not_leaked_to_the_client() -> None:
-    app: FastAPI = create_app()
+    app: FastAPI = create_app(TEST_SETTINGS)
 
     @app.get("/boom")
     async def boom() -> None:
