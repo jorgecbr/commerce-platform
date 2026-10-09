@@ -25,4 +25,4 @@ htmlcov/
 .DS_Store
 
 # Scratch
-todo/
+todo/.venv*/

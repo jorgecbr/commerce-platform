@@ -27,7 +27,9 @@ from app.adapters.events.consumer import IdempotentConsumer
 from app.adapters.events.kafka_producer import KafkaEventPublisher, create_producer
 from app.adapters.events.outbox_relay import OutboxRelay
 
-DSN = os.getenv("TEST_DATABASE_DSN", "postgresql+psycopg://postgres@localhost:55432/orders")
+# Defaults match docker-compose.yml: PostgreSQL on 5432 and the external
+# Kafka listener on 29092.
+DSN = os.getenv("TEST_DATABASE_DSN", "postgresql+psycopg://orders:orders@localhost:5432/orders")
 BOOTSTRAP = os.getenv("TEST_KAFKA_BOOTSTRAP", "localhost:29092")
 TOPIC = f"test.orders.{uuid.uuid4().hex[:8]}"
 

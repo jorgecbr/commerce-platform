@@ -146,6 +146,19 @@ class TestDomainEvents:
         assert isinstance(events[0], OrderPlaced)
         assert events[0].total.amount == 4550
 
+    def test_event_carries_the_lines_so_a_consumer_can_reserve(self) -> None:
+        """The event is the contract other services act on.
+
+        Without the lines, a consumer cannot know what to reserve and will
+        happily confirm an order with no stock behind it.
+        """
+        event = place().events[0]
+        assert isinstance(event, OrderPlaced)
+        assert [(line.sku, line.quantity) for line in event.lines] == [
+            ("SKU-001", 2),
+            ("SKU-002", 1),
+        ]
+
     def test_transitions_record_events_in_order(self) -> None:
         order = place()
         order.confirm(now=LATER)

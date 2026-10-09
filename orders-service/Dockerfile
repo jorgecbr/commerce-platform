@@ -13,6 +13,10 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
+# python:3.12-slim does not ship uv, so the pinned binary is copied in from the
+# official image. Pinning the version keeps the build reproducible.
+COPY --from=ghcr.io/astral-sh/uv:0.5.24 /uv /uvx /usr/local/bin/
+
 WORKDIR /code
 
 # Dependencies change far less often than the code, so they are resolved in
@@ -23,7 +27,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY app ./app
 COPY migrations ./migrations
-COPY alembic.ini ./
+COPY alembic.ini README.md ./
+# README.md is declared as the project readme in pyproject.toml, so hatchling
+# refuses to build the package without it.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 

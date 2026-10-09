@@ -24,6 +24,7 @@ from app.domain.events import (
     OrderCancelled,
     OrderConfirmed,
     OrderDomainEvent,
+    OrderLineSnapshot,
     OrderPlaced,
     OrderShipped,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "OrderDomainEvent",
     "OrderId",
     "OrderLine",
+    "OrderLineSnapshot",
     "OrderNotFoundError",
     "OrderPlaced",
     "OrderShipped",

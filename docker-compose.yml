@@ -3,12 +3,17 @@ name: commerce-platform
 services:
   postgres:
     image: postgres:17-alpine
+    # The default 64 MB of shared memory is not enough for PostgreSQL to
+    # checkpoint and shut down cleanly after running its init scripts on a
+    # constrained machine, and the entrypoint aborts the whole boot when that
+    # fails. 256 MB removes the failure mode.
+    shm_size: 256mb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-orders}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orders}
       POSTGRES_DB: ${POSTGRES_DB:-orders}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - orders_pg:/var/lib/postgresql/data
       # Creates one database per service on first boot.
@@ -22,7 +27,7 @@ services:
   redis:
     image: redis:8-alpine
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -36,7 +41,7 @@ services:
     # addresses.
     image: apache/kafka:3.9.0
     ports:
-      - "127.0.0.1:29092:29092"
+      - "127.0.0.1:${KAFKA_PORT:-29092}:29092"
     environment:
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: "broker,controller"
@@ -79,6 +84,24 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+  # The outbox relay and the saga consumer run in their own service, not in
+  # the API. A request that waits for Kafka inherits its latency, so a broker
+  # outage would become an API outage. Here it only delays the next poll.
+  orders-worker:
+    build:
+      context: ./orders-service
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DATABASE_DSN: postgresql://orders:orders@postgres:5432/orders
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    restart: on-failure
+
   inventory-service:
     build:
       context: ./inventory-service
@@ -88,7 +111,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      DATABASE_URL: jdbc:postgresql://orders:orders@postgres:5432/inventory
+      # JDBC has no user:password@ form; credentials go in their own properties.
+      DATABASE_URL: jdbc:postgresql://postgres:5432/inventory
       DATABASE_USER: orders
       DATABASE_PASSWORD: orders
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092

@@ -38,7 +38,10 @@ from app.application.commands.place_order import (
 )
 from app.domain import OrderStatus, PricingService
 
-DSN = os.getenv("TEST_DATABASE_DSN", "postgresql+psycopg://postgres@localhost:55432/orders")
+# Defaults match docker-compose.yml, so a developer who ran `make up` gets
+# the integration tests without exporting anything. Override them to point at
+# a different stack.
+DSN = os.getenv("TEST_DATABASE_DSN", "postgresql+psycopg://orders:orders@localhost:5432/orders")
 REDIS_URL = os.getenv("TEST_REDIS_URL", "redis://localhost:6379/1")
 
 
@@ -119,6 +122,15 @@ class TestPersistence:
         total_payload = events[0].payload["total"]
         assert isinstance(total_payload, dict)
         assert total_payload["amount"] == 4550
+
+        # Regression: order.placed once carried only the total, so the
+        # inventory service reserved nothing and still answered "reserved",
+        # confirming orders that had no stock behind them. The lines must
+        # travel with the event.
+        assert events[0].payload["lines"] == [
+            {"sku": "SKU-001", "quantity": 2},
+            {"sku": "SKU-002", "quantity": 1},
+        ]
 
     @pytest.mark.asyncio
     async def test_lines_are_persisted_and_reload_identically(self, session: AsyncSession) -> None:

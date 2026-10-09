@@ -4,6 +4,7 @@ The only tests in the suite that touch the network layer, and they still need
 no Docker: the ASGI app is called in-process through ``httpx``.
 """
 
+import os
 from collections.abc import Iterator
 
 import pytest
@@ -13,11 +14,12 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 
-# The engine and the Redis client are both lazy: nothing connects until a
-# request needs them, so these tests run without any infrastructure.
+# The engine and the Redis client are both lazy, so nothing connects until a
+# request needs them and these tests run without infrastructure. Only the
+# readiness probe touches Redis, and it degrades instead of failing.
 TEST_SETTINGS = Settings(
-    DATABASE_DSN="postgresql://user:pass@localhost:5432/orders",
-    REDIS_URL="redis://localhost:6379/15",
+    DATABASE_DSN=os.getenv("TEST_DATABASE_DSN", "postgresql://orders:orders@localhost:5432/orders"),
+    REDIS_URL=os.getenv("TEST_REDIS_URL", "redis://localhost:6379/15"),
 )
 
 

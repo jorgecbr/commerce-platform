@@ -14,6 +14,7 @@ from app.domain import (
     Order,
     OrderDomainEvent,
     OrderLine,
+    OrderLineSnapshot,
     OrderPlaced,
     OrderStatus,
     Sku,
@@ -89,11 +90,13 @@ def event_to_payload(event: OrderDomainEvent) -> dict[str, object]:
         "occurred_at": event.occurred_at.value.isoformat(),
     }
     match event:
-        case OrderPlaced(order_id, customer_id, total, _):
+        case OrderPlaced(order_id, customer_id, total, lines, _):
             payload |= {
                 "order_id": str(order_id),
                 "customer_id": customer_id,
                 "total": {"amount": total.amount, "currency": total.currency},
+                # The consumer needs the quantities, not just the amount.
+                "lines": [{"sku": line.sku, "quantity": line.quantity} for line in lines],
             }
         case OrderConfirmed(order_id, _):
             payload["order_id"] = str(order_id)
@@ -115,10 +118,14 @@ def payload_to_event(payload: dict[str, object]) -> OrderDomainEvent:
             total_raw = payload["total"]
             if not isinstance(total_raw, dict):
                 raise ValueError(f"Malformed order.placed payload: {payload!r}")
+            raw_lines = payload.get("lines", [])
+            if not isinstance(raw_lines, list):
+                raise ValueError(f"Malformed order.placed lines: {raw_lines!r}")
             return OrderPlaced(
                 order_id=UUID(str(payload["order_id"])),
                 customer_id=str(payload["customer_id"]),
                 total=Money(int(total_raw["amount"]), str(total_raw["currency"])),
+                lines=tuple(OrderLineSnapshot(str(line["sku"]), int(line["quantity"])) for line in raw_lines),
                 occurred_at=occurred_at,
             )
         case _ if event_type == "order.confirmed":

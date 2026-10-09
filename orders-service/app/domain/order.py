@@ -33,6 +33,7 @@ from app.domain.events import (
     OrderCancelled,
     OrderConfirmed,
     OrderDomainEvent,
+    OrderLineSnapshot,
     OrderPlaced,
     OrderShipped,
 )
@@ -114,7 +115,13 @@ class Order:
         )
         total = order.total
         order.events = (
-            OrderPlaced(order_id=order_id, customer_id=customer_id, total=total, occurred_at=now),
+            OrderPlaced(
+                order_id=order_id,
+                customer_id=customer_id,
+                total=total,
+                lines=tuple(OrderLineSnapshot(sku=line.sku.value, quantity=line.quantity) for line in lines),
+                occurred_at=now,
+            ),
         )
         return order
 
