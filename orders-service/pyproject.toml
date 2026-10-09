@@ -16,6 +16,7 @@ dependencies = [
   "psycopg[binary]==3.2.3",
   "alembic==1.14.0",
   "redis==5.2.1",
+  "aiokafka==0.12.0",
 ]
 
 [dependency-groups]
@@ -137,3 +138,9 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# aiokafka ships no py.typed marker. The parts this project touches are
+# constructors and two calls, both verified by the integration tests.
+[[tool.mypy.overrides]]
+module = ["aiokafka.*"]
+ignore_missing_imports = true
