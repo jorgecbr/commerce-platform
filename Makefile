@@ -46,6 +46,9 @@ test-integration: ## needs PostgreSQL and Redis running
 coverage: ## tests with a coverage report
 	$(PY) pytest --cov=app --cov-report=term-missing
 
+verify: ## end-to-end check of the saga against the running stack
+	./scripts/verify_saga.sh
+
 # -------------------------------------------------------------------------
 # App
 # -------------------------------------------------------------------------
@@ -71,8 +74,8 @@ test-java: ## unit tests for inventory-service
 # -------------------------------------------------------------------------
 .PHONY: up down migrate revision reset-db
 
-up: ## start PostgreSQL, Redis and Kafka
-	docker compose up -d postgres redis kafka
+up: ## start the whole stack: infra, both services and the worker
+	docker compose up -d
 	docker compose ps
 
 down: ## stop everything and drop the volumes

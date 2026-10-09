@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  orders-service:
-    name: orders-service (python)
+  quality:
+    name: quality gates
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,14 +47,36 @@ jobs:
       - name: Dependency check
         run: uv run deptry .
 
+  tests:
+    name: unit and integration tests
+    runs-on: ubuntu-latest
+    needs: quality
+    defaults:
+      run:
+        working-directory: orders-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
       - name: Start infrastructure
         run: |
           docker compose up -d postgres redis kafka
-          docker compose ps --format json | jq -r 'select(.Health != "" and .Health != "healthy") | .Name' \
-            || true
-          # Wait for the healthchecks rather than sleeping a fixed amount.
           timeout 180 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" commerce-platform-postgres-1)" = "healthy" ]; do sleep 2; done'
           timeout 180 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" commerce-platform-kafka-1)" = "healthy" ]; do sleep 2; done'
+          timeout 120 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" commerce-platform-redis-1)" = "healthy" ]; do sleep 2; done'
 
       - name: Migrations
         run: uv run alembic upgrade head
@@ -62,11 +84,11 @@ jobs:
           DATABASE_DSN: postgresql://orders:orders@localhost:5432/orders
 
       - name: Test
-        run: |
-          uv run pytest --cov=app --cov-report=term-missing --cov-report=xml
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=xml
         env:
           TEST_DATABASE_DSN: postgresql+psycopg://orders:orders@localhost:5432/orders
           TEST_KAFKA_BOOTSTRAP: localhost:29092
+          TEST_REDIS_URL: redis://localhost:6379/1
 
       - name: Enforce coverage
         run: uv run coverage report --fail-under=85
@@ -78,13 +100,10 @@ jobs:
           path: orders-service/coverage.xml
           if-no-files-found: error
 
-      - name: Logs on failure
-        if: failure()
-        run: docker compose logs --no-color
-
-  inventory-service:
+  inventory-unit-tests:
     name: inventory-service (java)
     runs-on: ubuntu-latest
+    needs: quality
     defaults:
       run:
         working-directory: inventory-service
@@ -102,12 +121,44 @@ jobs:
       - name: Build with tests
         run: mvn -B verify
 
-      - name: Store the jar
-        uses: actions/upload-artifact@v4
-        with:
-          name: inventory-service-jar
-          path: inventory-service/target/*.jar
-          if-no-files-found: error
+  saga:
+    name: saga end-to-end
+    runs-on: ubuntu-latest
+    needs: tests
+    steps:
+      - uses: actions/checkout@v4
+
+      # The real proof. Every unit test in this repository passed while
+      # order.placed omitted its lines, the inventory service reserved nothing
+      # and the saga confirmed the order anyway. That bug only exists in the
+      # gap between the two services, so it needs a test that crosses it.
+      - name: Build the images
+        run: docker compose build orders-service inventory-service
+
+      - name: Start the whole stack
+        run: |
+          docker compose up -d
+          for service in postgres redis kafka orders-service orders-worker inventory-service; do
+            timeout 300 bash -c "until docker inspect -f '{{.State.Status}}' commerce-platform-${service}-1 2>/dev/null | grep -q running; do sleep 3; done"
+          done
+
+      - name: Apply migrations
+        run: |
+          docker compose exec -T orders-service alembic upgrade head
+
+      - name: Wait for the API
+        run: |
+          timeout 180 bash -c 'until curl -fsS http://localhost:8000/health/live; do sleep 3; done'
+
+      - name: Verify the saga
+        run: ./scripts/verify_saga.sh
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker compose logs --no-color
+          docker compose exec -T postgres psql -U orders -d orders -c 'select * from orders'
+          docker compose exec -T postgres psql -U orders -d inventory -c 'select * from stock_items'
 
   repository:
     name: repository hygiene
@@ -123,19 +174,13 @@ jobs:
           fi
           echo "No .env file is committed."
 
-      - name: Every table in the inventory service has a migration
+      - name: Inventory schema is migrated and versioned
         run: |
-          # The Flyway migration is hand written, so a table added to the JPA
-          # entities and forgotten in SQL would only fail at runtime, when
-          # Hibernate validates the schema on boot.
           if ! grep -q "CREATE TABLE stock_items" \
                inventory-service/src/main/resources/db/migration/V1__initial_schema.sql; then
             echo "::error::stock_items has no migration"
             exit 1
           fi
-
-          # The optimistic locking column is not optional: without it two
-          # orders for the last unit both succeed.
           if ! grep -q "version" \
                inventory-service/src/main/resources/db/migration/V1__initial_schema.sql; then
             echo "::error::stock_items is missing its version column"
@@ -143,7 +188,7 @@ jobs:
           fi
           echo "Inventory migrations present."
 
-      - name: No Dockerfile missing for a compose service
+      - name: Every built service has a Dockerfile
         run: |
           for service in orders-service inventory-service; do
             if [ ! -f "$service/Dockerfile" ]; then
@@ -152,3 +197,11 @@ jobs:
             fi
           done
           echo "Every built service has a Dockerfile."
+
+      - name: The saga check exists and is executable
+        run: |
+          if [ ! -x scripts/verify_saga.sh ]; then
+            echo "::error::scripts/verify_saga.sh must be executable and is what CI relies on"
+            exit 1
+          fi
+          echo "Saga verification present."
