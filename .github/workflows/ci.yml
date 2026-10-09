@@ -123,12 +123,32 @@ jobs:
           fi
           echo "No .env file is committed."
 
-      - name: Outbox migration and schema agree
+      - name: Every table in the inventory service has a migration
         run: |
-          # The first migration is hand written, so a column added to tables.py
-          # and forgotten in the migration would only show up at runtime.
-          if ! grep -q "processed_messages" inventory-service/src/main/resources/db/migration/V1__initial_schema.sql; then
-            echo "::error::inventory-service migration looks out of date"
+          # The Flyway migration is hand written, so a table added to the JPA
+          # entities and forgotten in SQL would only fail at runtime, when
+          # Hibernate validates the schema on boot.
+          if ! grep -q "CREATE TABLE stock_items" \
+               inventory-service/src/main/resources/db/migration/V1__initial_schema.sql; then
+            echo "::error::stock_items has no migration"
             exit 1
           fi
-          echo "Migrations present."
+
+          # The optimistic locking column is not optional: without it two
+          # orders for the last unit both succeed.
+          if ! grep -q "version" \
+               inventory-service/src/main/resources/db/migration/V1__initial_schema.sql; then
+            echo "::error::stock_items is missing its version column"
+            exit 1
+          fi
+          echo "Inventory migrations present."
+
+      - name: No Dockerfile missing for a compose service
+        run: |
+          for service in orders-service inventory-service; do
+            if [ ! -f "$service/Dockerfile" ]; then
+              echo "::error::$service has no Dockerfile but docker-compose builds it"
+              exit 1
+            fi
+          done
+          echo "Every built service has a Dockerfile."
