@@ -138,8 +138,12 @@ jobs:
       - name: Start infrastructure and wait for it
         run: |
           docker compose up -d postgres redis kafka
+          # The variable must be expanded by THIS shell. Escaping it would
+          # hand the inner shell a literal ${service} that it cannot resolve,
+          # and the loop would wait forever on a container that does not exist.
           for service in postgres redis kafka; do
-            timeout 300 bash -c "until [ \"\$(docker inspect -f '{{.State.Health.Status}}' commerce-platform-\${service}-1)\" = healthy ]; do sleep 3; done"
+            container="commerce-platform-${service}-1"
+            timeout 300 bash -c "until [ \"\$(docker inspect -f '{{.State.Health.Status}}' $container)\" = healthy ]; do sleep 3; done"
           done
           # The databases only exist after the init script has run.
           timeout 120 bash -c 'until docker compose exec -T postgres psql -U orders -d postgres -tAc "select 1 from pg_database where datname='\''orders'\''" | grep -q 1; do sleep 3; done'
