@@ -56,11 +56,13 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["app"]
-# `app/application/ports.py` is omitted because Protocol method bodies are
-# `...` and can never execute, so counting them would report a permanent,
-# meaningless gap. `app/main.py` is the composition root: it is wiring, it is
-# covered by the smoke tests of the HTTP adapter, not by unit tests.
-omit = ["app/main.py", "app/application/ports.py"]
+# Omitted from the coverage denominator, with a reason for each:
+#   app/main.py    composition root: wiring, exercised by the HTTP smoke tests
+#   app/worker.py  process entry point: an event loop started for the lifetime
+#                  of the process, only meaningful against real infrastructure
+#   ports.py       Protocol bodies are `...` and can never execute, so they
+#                  would report a permanent gap that says nothing
+omit = ["app/main.py", "app/worker.py", "app/application/ports.py"]
 
 [tool.coverage.report]
 show_missing = true
