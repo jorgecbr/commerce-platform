@@ -1,0 +1,131 @@
+[project]
+name = "orders-service"
+version = "0.1.0"
+description = "Orders microservice: DDD + Clean Architecture on FastAPI"
+readme = "README.md"
+requires-python = "==3.12.*"
+license = { text = "MIT" }
+authors = [{ name = "jorgecbr" }]
+
+dependencies = [
+  "fastapi==0.115.6",
+  "uvicorn[standard]==0.34.0",
+  "pydantic==2.10.4",
+  "pydantic-settings==2.7.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==8.3.4",
+  "pytest-asyncio==0.25.0",
+  "pytest-cov==6.0.0",
+  "httpx==0.28.1",
+  "ruff==0.8.4",
+  "mypy==1.14.0",
+  "deptry==0.22.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# --------------------------------------------------------------------------
+# Tests
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-q", "--strict-markers", "--strict-config"]
+# A warning from our code is a bug, so it fails the build. The single
+# exception is a known deprecation inside starlette's test client, which we
+# cannot fix and must not hide behind a blanket "ignore warnings" policy.
+filterwarnings = [
+  "error",
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+# `app/application/ports.py` is omitted because Protocol method bodies are
+# `...` and can never execute, so counting them would report a permanent,
+# meaningless gap. `app/main.py` is the composition root: it is wiring, it is
+# covered by the smoke tests of the HTTP adapter, not by unit tests.
+omit = ["app/main.py", "app/application/ports.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]
+
+# --------------------------------------------------------------------------
+# Ruff: formatter + linter in one tool
+# --------------------------------------------------------------------------
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle
+  "F",    # pyflakes
+  "I",    # isort
+  "N",    # pep8-naming
+  "UP",   # pyupgrade
+  "B",    # bugbear
+  "SIM",  # simplify
+  "RET",  # return
+  "C4",   # comprehensions
+  "PTH",  # pathlib
+  "RUF",  # ruff-specific
+  "S",    # bandit
+  "D",    # pydocstyle
+  "ANN",  # annotations
+  "ARG",  # unused arguments
+  "T20",  # no print
+]
+ignore = [
+  "D203",  # incompatible with D211
+  "D213",  # incompatible with D212
+  "D105",  # magic methods do not need a docstring
+  "D107",  # __init__ is documented in its class docstring
+  "ANN401",  # Any is allowed in a few boundary helpers
+]
+
+[tool.ruff.lint.per-file-ignores]
+# In tests the name of the test is the documentation, and asserting on the
+# literal 4500 is clearer than hiding it behind a constant.
+"tests/**" = ["D", "ANN", "ARG", "S101", "PLR2004"]
+
+# --------------------------------------------------------------------------
+# deptry: finds dependencies that are declared but unused
+# --------------------------------------------------------------------------
+[tool.deptry]
+# DEP002: uvicorn is never imported, it is the ASGI server started from the CLI
+# (`uvicorn app.main:app`). A true positive for static analysis, a false one here.
+ignore = ["DEP002"]
+
+# --------------------------------------------------------------------------
+# Mypy: strict means strict
+# --------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+files = ["app", "tests"]
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false

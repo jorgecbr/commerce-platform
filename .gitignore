@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Java / Maven
+target/
+.mvn/
+*.class
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Scratch
+todo/
